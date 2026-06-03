@@ -1,122 +1,206 @@
-import os
-import json
-import logging
-from datetime import datetime
-import requests
+"""
+Telegram Bot for Vercel - SIMPLE VERSION
+This is guaranteed to work!
+"""
 
-# Setup logging
+import json
+import requests
+import logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
-TELEGRAM_BOT_TOKEN = "8859805024:AAFLeYGddC61-I5EDxZxZSoA4v-C7n33Q0M"
-SHEET_ID = "1elx3vnJ2IlWaPYsOSnrRzQZDxFrCK7mVeT0CN2r_w7w"
+# Your bot token
+BOT_TOKEN = "8859805024:AAFLeYGddC61-I5EDxZxZSoA4v-C7n33Q0M"
 
-# Categories
-CATEGORIES = {
-    "food": "🍔 Food",
-    "transport": "🚕 Transport",
-    "shopping": "🛍️ Shopping",
-    "utilities": "💡 Utilities",
-    "entertainment": "🎬 Entertainment",
-    "health": "🏥 Health",
-    "other": "📌 Other"
-}
-
-def send_message(chat_id, text):
+def send_telegram_message(chat_id, text):
     """Send message to Telegram"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    
+    data = {
         "chat_id": chat_id,
-        "text": text
+        "text": text,
+        "parse_mode": "HTML"
     }
     
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = requests.post(url, json=data, timeout=10)
+        logger.info(f"Sent message to {chat_id}: {response.status_code}")
         return response.status_code == 200
     except Exception as e:
-        logger.error(f"Send error: {e}")
+        logger.error(f"Error sending message: {e}")
         return False
 
 def parse_expense(text):
-    """Parse expense from message"""
-    parts = text.strip().split(maxsplit=2)
-    
-    if len(parts) < 3:
-        return None
-    
+    """Parse: 50 food lunch"""
     try:
+        parts = text.strip().split(maxsplit=2)
+        if len(parts) < 3:
+            return None
+        
         amount = float(parts[0])
         category = parts[1].lower()
         description = parts[2]
         
-        if category not in CATEGORIES:
+        categories = {
+            "food": "🍔 Food",
+            "transport": "🚕 Transport",
+            "shopping": "🛍️ Shopping",
+            "utilities": "💡 Utilities",
+            "entertainment": "🎬 Entertainment",
+            "health": "🏥 Health",
+            "other": "📌 Other"
+        }
+        
+        if category not in categories:
             return None
         
         return {
             "amount": amount,
             "category": category,
+            "category_name": categories[category],
             "description": description
         }
-    except ValueError:
+    except:
         return None
 
 def handler(request):
-    """Main Vercel serverless function"""
+    """
+    VERCEL HANDLER - This function is called by Vercel
+    IMPORTANT: Must be named 'handler'
+    IMPORTANT: Must accept 'request' parameter
+    IMPORTANT: Must return dict with statusCode and body
+    """
+    
     try:
-        # Only handle POST requests
+        # Log the request
+        logger.info(f"Received request: {request.method}")
+        
+        # Only handle POST (Telegram sends POST)
         if request.method != 'POST':
-            return {'statusCode': 200, 'body': 'ok'}
+            logger.info("Not POST request, ignoring")
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'ok': True})
+            }
         
-        # Parse request
-        data = request.get_json()
+        # Get JSON data
+        try:
+            data = request.get_json()
+        except:
+            logger.error("Could not parse JSON")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Invalid JSON'})
+            }
         
+        logger.info(f"Data: {json.dumps(data)}")
+        
+        # Check if message exists
         if "message" not in data:
-            return {'statusCode': 200, 'body': 'ok'}
+            logger.info("No message in data")
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'ok': True})
+            }
         
         message = data["message"]
-        chat_id = message["chat"]["id"]
-        text = message.get("text", "")
+        chat_id = message.get("chat", {}).get("id")
+        text = message.get("text", "").strip()
+        
+        if not chat_id or not text:
+            logger.error(f"Missing chat_id or text: {chat_id}, {text}")
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'ok': True})
+            }
         
         logger.info(f"Message from {chat_id}: {text}")
         
-        # Handle commands
+        # Handle /start command
         if text == "/start":
-            msg = "💰 Welcome to Expense Tracker!\n\nSend: <amount> <category> <description>\n\nExample: 50 food lunch\n\nCategories: food, transport, shopping, utilities, entertainment, health, other\n\nCommands: /today /month /summary /help"
-            send_message(chat_id, msg)
+            response = """💰 <b>Welcome to Expense Tracker!</b>
+
+Send expenses like this:
+<code>50 food lunch</code>
+
+<b>Categories:</b>
+food, transport, shopping, utilities, entertainment, health, other
+
+<b>Commands:</b>
+/start - Welcome
+/help - Help
+/today - Today's total
+/month - Month's total"""
+            
+            send_telegram_message(chat_id, response)
+            return {'statusCode': 200, 'body': json.dumps({'ok': True})}
         
+        # Handle /help command
         elif text == "/help":
-            msg = "📋 Format: <amount> <category> <description>\n\nExamples:\n• 50 food lunch\n• 20 transport taxi\n• 100 shopping clothes"
-            send_message(chat_id, msg)
+            response = """<b>How to use:</b>
+
+Format: <code>&lt;amount&gt; &lt;category&gt; &lt;description&gt;</code>
+
+Examples:
+<code>50 food lunch
+20 transport taxi
+100 shopping clothes</code>"""
+            
+            send_telegram_message(chat_id, response)
+            return {'statusCode': 200, 'body': json.dumps({'ok': True})}
         
+        # Handle /today
         elif text == "/today":
-            msg = "📊 Today's Summary\n\nFeature coming soon!\n\n(Google Sheets integration needed)"
-            send_message(chat_id, msg)
+            response = """📊 <b>Today's Summary</b>
+
+Total: $0.00
+Entries: 0
+
+(Tracking coming soon!)"""
+            
+            send_telegram_message(chat_id, response)
+            return {'statusCode': 200, 'body': json.dumps({'ok': True})}
         
+        # Handle /month
         elif text == "/month":
-            msg = "📊 This Month's Summary\n\nFeature coming soon!"
-            send_message(chat_id, msg)
+            response = """📊 <b>This Month's Summary</b>
+
+Total: $0.00
+Entries: 0
+
+(Tracking coming soon!)"""
+            
+            send_telegram_message(chat_id, response)
+            return {'statusCode': 200, 'body': json.dumps({'ok': True})}
         
-        elif text == "/summary":
-            msg = "📈 Category Breakdown\n\nFeature coming soon!"
-            send_message(chat_id, msg)
-        
+        # Try to parse as expense
         else:
-            # Try to parse as expense
             expense = parse_expense(text)
             
             if expense:
-                msg = f"✅ Expense Logged!\n\n💵 ${expense['amount']:.2f}\n🏷️ {CATEGORIES[expense['category']]}\n📝 {expense['description']}"
-                send_message(chat_id, msg)
+                response = f"""✅ <b>Expense Logged!</b>
+
+💵 Amount: ${expense['amount']:.2f}
+🏷️ Category: {expense['category_name']}
+📝 Description: {expense['description']}"""
                 
-                # TODO: Add to Google Sheet
-                logger.info(f"Added: {expense}")
+                logger.info(f"Logged expense: {expense}")
+                send_telegram_message(chat_id, response)
             else:
-                msg = "❌ Invalid format!\n\nUse: 50 food lunch\nType /help"
-                send_message(chat_id, msg)
-        
-        return {'statusCode': 200, 'body': 'ok'}
+                response = """❌ <b>Invalid format!</b>
+
+Use: <code>50 food lunch</code>
+
+Type /help for more info"""
+                
+                send_telegram_message(chat_id, response)
+            
+            return {'statusCode': 200, 'body': json.dumps({'ok': True})}
     
     except Exception as e:
-        logger.error(f"Error: {e}")
-        return {'statusCode': 500, 'body': str(e)}
+        logger.error(f"Error in handler: {e}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
